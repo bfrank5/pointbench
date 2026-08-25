@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+*.egg-info/
+build/
+dist/
+.coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / installers
+pip-wheel-metadata/
+*.whl
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+
+# OMP / project-local state
+.omp/
