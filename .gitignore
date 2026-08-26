@@ -37,5 +37,6 @@ Thumbs.db
 .env.*
 !.env.example
 
-# OMP / project-local state
-.omp/
+
+# Local point-cloud test data
+data/

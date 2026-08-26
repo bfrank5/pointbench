@@ -41,27 +41,8 @@ def test_fusion_task_can_use_wine():
     assert task.executable_path.endswith("/Program Files/FUSION/ClipData.exe")
 
 
-def test_flow_spec_from_mapping():
-    spec = FlowSpec.from_mapping(
-        {
-            "name": "canopy-height-model-fusion",
-            "description": "Derive a canopy height model from a raw lidar tile.",
-            "inputs": [{"name": "lidar_tiles", "path": "./data/my_lidar_tile.laz"}],
-            "tasks": [
-                {
-                    "kind": "fusion",
-                    "name": "normalize",
-                    "fusion_dir": "/home/bryce/.wine/drive_c/Program Files/FUSION",
-                    "executable": "ClipData.exe",
-                    "use_wine": True,
-                    "args": {"input": "${inputs.lidar_tiles}", "output": "build/normalized.laz"},
-                }
-            ],
-            "outputs": [{"name": "canopy_height_model", "path": "build/canopy_height_model.tif"}],
-        }
-    )
-
-    assert spec == FlowSpec(
+def test_flow_spec_built_from_python_objects():
+    spec = FlowSpec(
         name="canopy-height-model-fusion",
         description="Derive a canopy height model from a raw lidar tile.",
         inputs=(FlowInput(name="lidar_tiles", path="./data/my_lidar_tile.laz"),),
@@ -77,11 +58,7 @@ def test_flow_spec_from_mapping():
         outputs=(FlowOutput(name="canopy_height_model", path="build/canopy_height_model.tif"),),
     )
 
-
-def test_flow_spec_rejects_missing_name():
-    try:
-        FlowSpec.from_mapping({})
-    except ValueError as exc:
-        assert str(exc) == "name must be a non-empty string"
-    else:
-        raise AssertionError("expected ValueError")
+    assert spec.name == "canopy-height-model-fusion"
+    assert spec.inputs[0] == FlowInput(name="lidar_tiles", path="./data/my_lidar_tile.laz")
+    assert isinstance(spec.tasks[0], FusionTask)
+    assert spec.outputs[0] == FlowOutput(name="canopy_height_model", path="build/canopy_height_model.tif")

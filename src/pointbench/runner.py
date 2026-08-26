@@ -2,36 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
 from subprocess import CompletedProcess, run
 from time import perf_counter
 from typing import Any, Mapping
 
-from .core import FlowOutput, FlowSpec, FlowTask, FusionTask, TaskResult
-from .tasks import CanopyModelTask
-
-
-@dataclass(slots=True)
-class FlowContext:
-    """Resolved flow state shared across tasks."""
-
-    flow_name: str = ""
-    inputs: dict[str, Any] = field(default_factory=dict)
-    tasks: dict[str, Any] = field(default_factory=dict)
-    outputs: dict[str, Any] = field(default_factory=dict)
-
-    def resolve(self, value: Any) -> Any:
-        if isinstance(value, str):
-            return _resolve_string(value, self)
-        if isinstance(value, Mapping):
-            return {key: self.resolve(item) for key, item in value.items()}
-        if isinstance(value, list):
-            return [self.resolve(item) for item in value]
-        if isinstance(value, tuple):
-            return tuple(self.resolve(item) for item in value)
-        return value
+from .core import FlowContext, FlowOutput, FlowSpec, FlowTask, TaskResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,7 +40,7 @@ def run_flow(
 
 
 def run_task(
-    task: FlowTask | FusionTask,
+    task: FlowTask | object,
     *,
     context: FlowContext,
     base_dir: str | Path | None = None,
@@ -74,7 +52,7 @@ def run_task(
     if isinstance(task, FlowTask):
         outcome = _run_python_task(task, context=context)
     else:
-        outcome = _run_fusion_task(task, context=context, base_dir=base_dir)
+        outcome = _run_external_task(task, context=context, base_dir=base_dir)
     elapsed = perf_counter() - start
     context.tasks[task.name] = outcome
     _collect_outputs(task.name, outcome, context)
@@ -93,20 +71,12 @@ def _run_python_task(task: FlowTask, *, context: FlowContext) -> Any:
     return func(**args)
 
 
-def _run_fusion_task(task: FusionTask, *, context: FlowContext, base_dir: str | Path | None) -> CompletedProcess[str]:
-    cfg = context.resolve(task.args)
-    if not isinstance(cfg, Mapping):
-        raise TypeError("resolved fusion args must be a mapping")
-    canopy = CanopyModelTask(**cfg)
-    argv = canopy.to_argv()
-    command = [task.executable_path, *argv]
-    if base_dir is not None:
-        cwd = Path(base_dir)
-    else:
-        cwd = None
-    if task.use_wine:
-        command = ["wine", *command]
-    return run(command, check=True, text=True, capture_output=True, cwd=cwd)
+def _run_external_task(task: object, *, context: FlowContext, base_dir: str | Path | None) -> CompletedProcess[str]:
+    argv, stdin = task.to_command(context)
+    cwd = Path(base_dir) if base_dir is not None else None
+    # check=False: a non-zero exit is recorded in the task outcome rather than
+    # aborting the whole flow, so a failing step still yields its timing/result.
+    return run(argv, input=stdin, check=False, text=True, capture_output=True, cwd=cwd)
 
 
 def _split_command(command: str) -> tuple[str, str]:
@@ -128,21 +98,11 @@ def _collect_outputs(task_name: str, outcome: Any, context: FlowContext) -> None
         context.outputs[task_name] = dict(outcome)
         for key, value in outcome.items():
             context.outputs[key] = value
+    elif isinstance(outcome, CompletedProcess):
+        context.outputs[task_name] = {
+            "returncode": outcome.returncode,
+            "stdout": outcome.stdout,
+            "stderr": outcome.stderr,
+        }
     elif outcome is not None:
         context.outputs[task_name] = outcome
-
-
-def _resolve_string(value: str, context: FlowContext) -> Any:
-    if not (value.startswith("${") and value.endswith("}")):
-        return value
-    path = value[2:-1].strip()
-    parts = path.split(".") if path else []
-    current: Any = context
-    for part in parts:
-        if isinstance(current, FlowContext):
-            current = getattr(current, part)
-        elif isinstance(current, Mapping):
-            current = current[part]
-        else:
-            current = getattr(current, part)
-    return current
